@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  voice_recognition_server:
+    container_name: voice_recognition
+    build: ./voice_recognition
+    restart: always
+    command: "sh -c 'uvicorn app.main:app --reload --workers 1 --host 0.0.0.0 --port 8000'"
+    volumes:
+      - ./voice_recognition:/app
+    expose:
+      - "8000"
+    env_file: ".env"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.voice_recognition.entrypoints=web"
+      - "traefik.http.routers.voice_recognition.rule=Host(`voice_recognition.${LOCAL_1}`, `voice_recognition.${LOCAL_2}`)"
+      - traefik.http.services.voice_recognition_service.loadbalancer.server.port=8000
+
+  reverse_proxy:
+    container_name: reverse_proxy
+    restart: always
+    image: "traefik:latest"
+    command:
+      - "--providers.docker=true"
+    ports:
+      - "80:80"
+    depends_on:      
+      - voice_recognition_server
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/.htpasswd:/.htpasswd
+      - "${EB_LOG_BASE_DIR:-./traefik}/traefik-proxy:/logs"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${LOCAL_1}`, `traefik.${LOCAL_2}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.usersfile=/.htpasswd"
